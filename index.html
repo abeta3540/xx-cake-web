@@ -31,19 +31,38 @@
     header {
       background: var(--panel);
       border-bottom: 1px solid var(--border);
-      padding: 6px 14px;
+      padding: 5px 12px;
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       flex-shrink: 0;
+      flex-wrap: wrap;
     }
     header h1 {
-      font-size: 15px;
+      font-size: 14px;
       font-weight: bold;
       color: var(--accent2);
       letter-spacing: 1px;
+      white-space: nowrap;
     }
-    .header-sep { flex: 1; }
+    .header-sep { flex: 1; min-width: 4px; }
+    .zoom-group {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 2px 4px;
+    }
+    #zoomLabel {
+      min-width: 38px;
+      text-align: center;
+      font-size: 11px;
+      color: var(--accent);
+      font-weight: bold;
+      cursor: default;
+    }
     .main {
       flex: 1;
       display: flex;
@@ -53,14 +72,17 @@
     .canvas-wrap {
       flex: 1;
       background: #0d0d14;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: auto;
+      overflow: hidden;
       position: relative;
     }
+    .canvas-wrap.pan-ready { cursor: grab !important; }
+    .canvas-wrap.pan-ready * { cursor: grab !important; }
+    .canvas-wrap.panning { cursor: grabbing !important; }
+    .canvas-wrap.panning * { cursor: grabbing !important; }
     .drop-hint {
       position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
       text-align: center;
       color: var(--text2);
       pointer-events: none;
@@ -68,6 +90,11 @@
     }
     .drop-hint .icon { font-size: 48px; margin-bottom: 8px; }
     .drop-hint p { font-size: 15px; }
+    #canvasInner {
+      position: absolute;
+      top: 0; left: 0;
+      transform-origin: 0 0;
+    }
     #canvas {
       display: block;
       cursor: crosshair;
@@ -110,7 +137,7 @@
       margin-bottom: 8px;
     }
     /* ===== BUTTONS ===== */
-    btn, .btn {
+    .btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -123,6 +150,7 @@
       font-family: inherit;
       transition: opacity 0.15s, transform 0.1s;
       user-select: none;
+      white-space: nowrap;
     }
     .btn:active { transform: scale(0.97); }
     .btn:disabled { opacity: 0.4; cursor: default; }
@@ -136,7 +164,9 @@
       color: var(--text);
     }
     .btn-ghost:hover { background: var(--border); }
-    .btn-sm { padding: 3px 8px; font-size: 11px; }
+    .btn-ghost.active { background: var(--border); border-color: var(--accent); color: var(--accent); }
+    .btn-sm { padding: 3px 7px; font-size: 11px; }
+    .btn-icon { padding: 3px 6px; font-size: 13px; }
     /* ===== FORM CONTROLS ===== */
     .field { margin-bottom: 6px; }
     .field label {
@@ -154,6 +184,17 @@
       height: 4px;
       cursor: pointer;
     }
+    input[type=number] {
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 12px;
+      font-family: inherit;
+      width: 100%;
+    }
+    input[type=number]:focus { outline: 1px solid var(--accent); }
     select {
       background: var(--bg);
       color: var(--text);
@@ -189,10 +230,7 @@
       border-radius: 50%;
       flex-shrink: 0;
     }
-    .layer-name {
-      flex: 1;
-      font-size: 12px;
-    }
+    .layer-name { flex: 1; font-size: 12px; }
     .layer-actions { display: flex; gap: 3px; }
     .layer-params {
       display: grid;
@@ -258,17 +296,38 @@
       animation: blink 0.8s infinite;
     }
     .rec-badge.visible { display: block; }
+    /* ===== SIZE INPUT ROW ===== */
+    .size-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .size-row input { flex: 1; }
+    .size-sep { color: var(--text2); font-size: 12px; flex-shrink: 0; }
   </style>
 </head>
 <body>
 
 <header>
   <h1>🍰 XX-CAKE Web</h1>
-  <button class="btn btn-ghost" onclick="document.getElementById('fileInput').click()">
+  <button class="btn btn-ghost btn-sm" onclick="document.getElementById('fileInput').click()">
     📂 画像を開く
   </button>
   <input type="file" id="fileInput" accept="image/*" style="display:none">
+
   <div class="header-sep"></div>
+
+  <!-- ZOOM CONTROLS -->
+  <div class="zoom-group">
+    <button class="btn btn-ghost btn-icon" onclick="zoomStep(1/1.2)" title="縮小 (Ctrl+-)">−</button>
+    <span id="zoomLabel">100%</span>
+    <button class="btn btn-ghost btn-icon" onclick="zoomStep(1.2)" title="拡大 (Ctrl++)">+</button>
+  </div>
+  <button class="btn btn-ghost btn-sm" onclick="fitToScreen()" title="画面に合わせる (F)">⊞ Fit</button>
+  <button class="btn btn-ghost btn-sm" onclick="resetView()" title="実寸 (0)">1:1</button>
+
+  <div style="width:6px;border-left:1px solid var(--border);height:18px"></div>
+
   <span style="color:var(--text2);font-size:11px">モード: </span>
   <select id="modeSelect" style="width:auto">
     <option value="draw">🖊 レイヤー追加</option>
@@ -285,7 +344,9 @@
       <div class="icon">🖼️</div>
       <p>画像をドラッグ＆ドロップ<br>またはヘッダーから開く</p>
     </div>
-    <canvas id="canvas"></canvas>
+    <div id="canvasInner">
+      <canvas id="canvas"></canvas>
+    </div>
   </div>
 
   <!-- SIDEBAR -->
@@ -304,7 +365,7 @@
           <button class="btn btn-ghost" style="flex:1" onclick="resetAll()">⬛ リセット</button>
         </div>
         <div style="margin-top:8px;color:var(--text2);font-size:11px">
-          💡 キャンバスをクリックでもシェイク
+          💡 クリック: シェイク / Alt+ドラッグ or 中ボタン: パン / ホイール: ズーム
         </div>
       </div>
 
@@ -365,6 +426,35 @@
         </div>
       </div>
 
+      <!-- EXPORT SIZE -->
+      <div class="card">
+        <div class="card-title">📐 エクスポートサイズ</div>
+        <div class="field">
+          <label>プリセット</label>
+          <select id="exportPreset" onchange="onExportPresetChange()">
+            <option value="original">オリジナル (等倍)</option>
+            <option value="half">1/2 サイズ</option>
+            <option value="quarter">1/4 サイズ</option>
+            <option value="custom">カスタム</option>
+          </select>
+        </div>
+        <div id="customSizeArea" style="display:none">
+          <div class="size-row" style="margin-bottom:5px">
+            <input type="number" id="exportW" placeholder="幅" min="1" max="4096">
+            <span class="size-sep">×</span>
+            <input type="number" id="exportH" placeholder="高さ" min="1" max="4096">
+            <span class="size-sep">px</span>
+          </div>
+          <div class="row" style="gap:4px">
+            <button class="btn btn-ghost btn-sm" style="flex:1" onclick="setExportFromImage()">画像から</button>
+            <button class="btn btn-ghost btn-sm" id="btnAspect" style="flex:1" onclick="toggleAspect()">比率固定: OFF</button>
+          </div>
+        </div>
+        <div id="exportSizePreview" style="color:var(--accent);font-size:11px;margin-top:6px;text-align:center;font-weight:bold">
+          出力: —
+        </div>
+      </div>
+
       <!-- GIF EXPORT -->
       <div class="card">
         <div class="card-title">🎬 録画 / 書き出し</div>
@@ -381,7 +471,7 @@
           </select>
         </div>
         <div class="field">
-          <label>品質 (低 = 高品質)</label>
+          <label>品質 (低値 = 高品質)</label>
           <select id="gifQuality">
             <option value="5">高品質 (遅い)</option>
             <option value="10" selected>標準</option>
@@ -409,7 +499,9 @@
   <div class="status-dot" id="statusDot"></div>
   <span id="statusText">画像を読み込んでください</span>
   <div style="flex:1"></div>
-  <span id="statusInfo" style="color:var(--accent);font-size:11px"></span>
+  <span id="statusZoom" style="color:var(--text2)">Zoom: 100%</span>
+  <span style="color:var(--border)">|</span>
+  <span id="statusInfo" style="color:var(--accent)"></span>
 </div>
 
 <!-- gif.js from CDN -->
@@ -426,33 +518,44 @@
 // ===== STATE =====
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
+const canvasInner = document.getElementById('canvasInner');
+const wrap = document.getElementById('canvasWrap');
 let img = null;
 let layers = [];
 let selectedLayer = null;
 let isDragging = false;
 let dragStart = { x: 0, y: 0 };
 let dragRect = null;
-let mode = 'draw'; // 'draw' | 'move'
+let mode = 'draw';
 let movingLayer = null;
 let moveOffset = { x: 0, y: 0 };
 let lastTime = 0;
-let rafId = null;
 let recording = false;
-let gifFrames = [];
 let mediaRecorder = null;
 let layerCounter = 0;
 let hoverLayer = null;
+
+// ===== VIEW STATE (zoom/pan) =====
+let viewZoom = 1.0;
+let viewPanX = 0, viewPanY = 0;
+let isPanning = false;
+let panStart = { mx: 0, my: 0, px: 0, py: 0 };
+let altKeyDown = false;
+
+// ===== EXPORT STATE =====
+const exportCanvas = document.createElement('canvas');
+const exportCtx = exportCanvas.getContext('2d');
+let aspectLocked = false;
+let aspectRatio = 1;
+let exportRenderInterval = null;
 
 const COLORS = ['#89b4fa','#cba6f7','#a6e3a1','#f9e2af','#f38ba8','#fab387','#74c7ec','#94e2d5'];
 
 // ===== SPRING PHYSICS =====
 class Spring {
   constructor(mass=5, spring=120, damping=8) {
-    this.mass = mass;
-    this.spring = spring;
-    this.damping = damping;
-    this.x = 0; this.y = 0;
-    this.vx = 0; this.vy = 0;
+    this.mass = mass; this.spring = spring; this.damping = damping;
+    this.x = 0; this.y = 0; this.vx = 0; this.vy = 0;
   }
   impulse(strength, mult=1) {
     const angle = Math.random() * Math.PI * 2;
@@ -463,14 +566,10 @@ class Spring {
   update(dt) {
     const ax = (-this.spring * this.x - this.damping * this.vx) / this.mass;
     const ay = (-this.spring * this.y - this.damping * this.vy) / this.mass;
-    this.vx += ax * dt;
-    this.vy += ay * dt;
-    this.x += this.vx * dt;
-    this.y += this.vy * dt;
+    this.vx += ax * dt; this.vy += ay * dt;
+    this.x += this.vx * dt; this.y += this.vy * dt;
   }
-  get energy() {
-    return Math.abs(this.vx) + Math.abs(this.vy) + Math.abs(this.x) + Math.abs(this.y);
-  }
+  get energy() { return Math.abs(this.vx)+Math.abs(this.vy)+Math.abs(this.x)+Math.abs(this.y); }
   reset() { this.x=this.y=this.vx=this.vy=0; }
 }
 
@@ -492,6 +591,49 @@ class Layer {
   }
 }
 
+// ===== VIEW TRANSFORM =====
+function applyViewTransform() {
+  canvasInner.style.transform = `translate(${viewPanX}px,${viewPanY}px) scale(${viewZoom})`;
+  const pct = `${Math.round(viewZoom * 100)}%`;
+  document.getElementById('zoomLabel').textContent = pct;
+  document.getElementById('statusZoom').textContent = `Zoom: ${pct}`;
+}
+
+function zoomAt(clientX, clientY, factor) {
+  const r = wrap.getBoundingClientRect();
+  const cx = clientX - r.left;
+  const cy = clientY - r.top;
+  const oldZoom = viewZoom;
+  viewZoom = Math.max(0.05, Math.min(16, viewZoom * factor));
+  viewPanX = cx - (cx - viewPanX) * (viewZoom / oldZoom);
+  viewPanY = cy - (cy - viewPanY) * (viewZoom / oldZoom);
+  applyViewTransform();
+}
+
+function zoomStep(factor) {
+  const r = wrap.getBoundingClientRect();
+  zoomAt(r.left + r.width / 2, r.top + r.height / 2, factor);
+}
+
+function fitToScreen() {
+  if (!img) { applyViewTransform(); return; }
+  const ww = wrap.clientWidth, wh = wrap.clientHeight;
+  const scale = Math.min((ww - 40) / img.width, (wh - 40) / img.height, 1);
+  viewZoom = scale;
+  viewPanX = (ww - img.width * scale) / 2;
+  viewPanY = (wh - img.height * scale) / 2;
+  applyViewTransform();
+}
+
+function resetView() {
+  if (!img) { viewZoom=1; viewPanX=0; viewPanY=0; applyViewTransform(); return; }
+  const ww = wrap.clientWidth, wh = wrap.clientHeight;
+  viewZoom = 1;
+  viewPanX = (ww - img.width) / 2;
+  viewPanY = (wh - img.height) / 2;
+  applyViewTransform();
+}
+
 // ===== IMAGE LOAD =====
 function loadImageFile(file) {
   if (!file || !file.type.startsWith('image/')) return;
@@ -505,6 +647,8 @@ function loadImageFile(file) {
     setStatus(`✅ 画像読み込み完了: ${i.width}×${i.height}`);
     document.getElementById('statusInfo').textContent = `${i.width}×${i.height}px`;
     URL.revokeObjectURL(url);
+    setTimeout(fitToScreen, 30);
+    updateExportSizePreview();
     render();
   };
   i.src = url;
@@ -512,8 +656,7 @@ function loadImageFile(file) {
 
 document.getElementById('fileInput').onchange = e => loadImageFile(e.target.files[0]);
 
-// Drag & Drop on canvas wrap
-const wrap = document.getElementById('canvasWrap');
+// ===== DRAG & DROP =====
 wrap.addEventListener('dragover', e => { e.preventDefault(); wrap.style.outline = '2px dashed var(--accent)'; });
 wrap.addEventListener('dragleave', () => { wrap.style.outline = ''; });
 wrap.addEventListener('drop', e => {
@@ -523,7 +666,59 @@ wrap.addEventListener('drop', e => {
   if (f) loadImageFile(f);
 });
 
-// ===== CANVAS MOUSE =====
+// ===== ZOOM / PAN EVENTS =====
+wrap.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+  zoomAt(e.clientX, e.clientY, factor);
+}, { passive: false });
+
+// Panning: middle button or Alt+left drag (capturing to intercept before canvas)
+wrap.addEventListener('mousedown', e => {
+  if (e.button === 1 || (e.button === 0 && e.altKey)) {
+    e.preventDefault();
+    e.stopPropagation();
+    isPanning = true;
+    panStart = { mx: e.clientX, my: e.clientY, px: viewPanX, py: viewPanY };
+    wrap.classList.add('panning');
+    wrap.classList.remove('pan-ready');
+  }
+}, true); // capturing
+
+document.addEventListener('mousemove', e => {
+  if (isPanning) {
+    viewPanX = panStart.px + (e.clientX - panStart.mx);
+    viewPanY = panStart.py + (e.clientY - panStart.my);
+    applyViewTransform();
+  }
+  if (altKeyDown && !isPanning) {
+    wrap.classList.add('pan-ready');
+  }
+});
+
+document.addEventListener('mouseup', e => {
+  if (isPanning) {
+    isPanning = false;
+    wrap.classList.remove('panning');
+    if (altKeyDown) wrap.classList.add('pan-ready');
+    else wrap.classList.remove('pan-ready');
+  }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.altKey && !altKeyDown) {
+    altKeyDown = true;
+    if (!isPanning) wrap.classList.add('pan-ready');
+  }
+});
+document.addEventListener('keyup', e => {
+  if (!e.altKey && altKeyDown) {
+    altKeyDown = false;
+    wrap.classList.remove('pan-ready');
+  }
+});
+
+// ===== CANVAS MOUSE (draw / move layers) =====
 function canvasPos(e) {
   const r = canvas.getBoundingClientRect();
   const sx = canvas.width / r.width;
@@ -536,13 +731,13 @@ function getLayerAt(x, y) {
     const l = layers[i];
     if (!l.enabled) continue;
     const ox = l.spring.x, oy = l.spring.y;
-    if (x >= l.x + ox && x <= l.x + ox + l.w && y >= l.y + oy && y <= l.y + oy + l.h) return l;
+    if (x >= l.x+ox && x <= l.x+ox+l.w && y >= l.y+oy && y <= l.y+oy+l.h) return l;
   }
   return null;
 }
 
 canvas.addEventListener('mousedown', e => {
-  if (!img) return;
+  if (!img || isPanning || e.button !== 0 || e.altKey) return;
   const p = canvasPos(e);
   mode = document.getElementById('modeSelect').value;
 
@@ -556,7 +751,6 @@ canvas.addEventListener('mousedown', e => {
       shakeAll();
     }
   } else {
-    // draw mode
     isDragging = true;
     dragStart = p;
     dragRect = { x: p.x, y: p.y, w: 0, h: 0 };
@@ -564,15 +758,13 @@ canvas.addEventListener('mousedown', e => {
 });
 
 canvas.addEventListener('mousemove', e => {
-  if (!img) return;
+  if (!img || isPanning) return;
   const p = canvasPos(e);
   mode = document.getElementById('modeSelect').value;
 
   if (movingLayer) {
-    movingLayer.x = p.x - moveOffset.x;
-    movingLayer.y = p.y - moveOffset.y;
-    movingLayer.x = Math.max(0, Math.min(canvas.width - movingLayer.w, movingLayer.x));
-    movingLayer.y = Math.max(0, Math.min(canvas.height - movingLayer.h, movingLayer.y));
+    movingLayer.x = Math.max(0, Math.min(canvas.width - movingLayer.w, p.x - moveOffset.x));
+    movingLayer.y = Math.max(0, Math.min(canvas.height - movingLayer.h, p.y - moveOffset.y));
     return;
   }
 
@@ -583,35 +775,29 @@ canvas.addEventListener('mousemove', e => {
       w: Math.abs(p.x - dragStart.x),
       h: Math.abs(p.y - dragStart.y)
     };
-  } else {
+  } else if (!e.altKey) {
     hoverLayer = mode === 'move' ? getLayerAt(p.x, p.y) : null;
     canvas.style.cursor = (mode === 'move' && hoverLayer) ? 'grab' : (mode === 'move' ? 'default' : 'crosshair');
   }
 });
 
 canvas.addEventListener('mouseup', e => {
-  if (!img) return;
-  const p = canvasPos(e);
+  if (!img || isPanning || e.button !== 0) return;
 
-  if (movingLayer) {
-    movingLayer = null;
-    return;
-  }
+  if (movingLayer) { movingLayer = null; return; }
 
   if (isDragging) {
     isDragging = false;
     if (dragRect && dragRect.w > 10 && dragRect.h > 10) {
-      const l = new Layer(
-        Math.round(dragRect.x), Math.round(dragRect.y),
-        Math.round(dragRect.w), Math.round(dragRect.h)
-      );
+      const l = new Layer(Math.round(dragRect.x), Math.round(dragRect.y),
+        Math.round(dragRect.w), Math.round(dragRect.h));
       layers.push(l);
       selectLayer(l);
       updateLayerList();
       setStatus(`✅ ${l.name} を追加 (${l.w}×${l.h}px)`);
     }
     dragRect = null;
-  } else if (mode === 'draw') {
+  } else if (mode === 'draw' && !e.altKey) {
     shakeAll();
   }
 });
@@ -622,48 +808,34 @@ canvas.addEventListener('mouseleave', () => {
   hoverLayer = null;
 });
 
-// Click in draw mode (no drag) → shake
-canvas.addEventListener('click', e => {
-  if (!img || layers.length === 0) return;
-});
-
 // ===== RENDER =====
 function render() {
   if (!img) return;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(img, 0, 0);
 
-  // Draw each layer region with offset
   for (const l of layers) {
     if (!l.enabled) continue;
-    const ox = Math.round(l.spring.x);
-    const oy = Math.round(l.spring.y);
-    ctx.save();
-    ctx.drawImage(img, l.x, l.y, l.w, l.h, l.x + ox, l.y + oy, l.w, l.h);
-    ctx.restore();
+    const ox = Math.round(l.spring.x), oy = Math.round(l.spring.y);
+    ctx.drawImage(img, l.x, l.y, l.w, l.h, l.x+ox, l.y+oy, l.w, l.h);
   }
 
-  // Draw layer borders in non-recording mode
   if (!recording) {
     for (const l of layers) {
-      const ox = Math.round(l.spring.x);
-      const oy = Math.round(l.spring.y);
+      const ox = Math.round(l.spring.x), oy = Math.round(l.spring.y);
       ctx.save();
       ctx.strokeStyle = l.color;
       ctx.lineWidth = (l === selectedLayer) ? 2 : 1;
       ctx.globalAlpha = (l === selectedLayer || l === hoverLayer) ? 1 : 0.5;
       ctx.setLineDash(l === selectedLayer ? [] : [4, 3]);
-      ctx.strokeRect(l.x + ox + 0.5, l.y + oy + 0.5, l.w - 1, l.h - 1);
-      if (!recording) {
-        ctx.globalAlpha = 0.7;
-        ctx.fillStyle = l.color;
-        ctx.font = 'bold 11px Segoe UI, sans-serif';
-        ctx.fillText(l.name, l.x + ox + 4, l.y + oy + 13);
-      }
+      ctx.strokeRect(l.x+ox+0.5, l.y+oy+0.5, l.w-1, l.h-1);
+      ctx.globalAlpha = 0.7;
+      ctx.fillStyle = l.color;
+      ctx.font = 'bold 11px Segoe UI, sans-serif';
+      ctx.fillText(l.name, l.x+ox+4, l.y+oy+13);
       ctx.restore();
     }
 
-    // Draw drag rect
     if (isDragging && dragRect && dragRect.w > 2) {
       ctx.save();
       ctx.strokeStyle = 'white';
@@ -679,20 +851,15 @@ function render() {
 
 // ===== ANIMATION LOOP =====
 function animate(timestamp) {
-  rafId = requestAnimationFrame(animate);
+  requestAnimationFrame(animate);
   const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
   lastTime = timestamp;
 
   if (img) {
-    let anyActive = false;
     for (const l of layers) {
-      if (!l.enabled) continue;
-      l.spring.update(dt);
-      if (l.spring.energy > 0.05) anyActive = true;
+      if (l.enabled) l.spring.update(dt);
     }
     render();
-
-    // Update layer item activity indicators
     for (const l of layers) {
       const el = document.getElementById(`layer-${l.id}`);
       if (el) el.classList.toggle('shake-active', l.spring.energy > 0.5);
@@ -709,10 +876,73 @@ function shakeAll() {
     if (l.enabled) l.spring.impulse(str, l.mult);
   }
 }
+function resetAll() { for (const l of layers) l.spring.reset(); }
 
-function resetAll() {
-  for (const l of layers) l.spring.reset();
+// ===== EXPORT SIZE =====
+function getExportSize() {
+  if (!img) return { w: 0, h: 0 };
+  const preset = document.getElementById('exportPreset').value;
+  if (preset === 'original') return { w: canvas.width, h: canvas.height };
+  if (preset === 'half') return { w: Math.max(1, Math.round(canvas.width/2)), h: Math.max(1, Math.round(canvas.height/2)) };
+  if (preset === 'quarter') return { w: Math.max(1, Math.round(canvas.width/4)), h: Math.max(1, Math.round(canvas.height/4)) };
+  if (preset === 'custom') {
+    const w = parseInt(document.getElementById('exportW').value) || canvas.width;
+    const h = parseInt(document.getElementById('exportH').value) || canvas.height;
+    return { w: Math.max(1, w), h: Math.max(1, h) };
+  }
+  return { w: canvas.width, h: canvas.height };
 }
+
+function getExportFrame() {
+  const { w, h } = getExportSize();
+  exportCanvas.width = w;
+  exportCanvas.height = h;
+  exportCtx.drawImage(canvas, 0, 0, w, h);
+  return exportCanvas;
+}
+
+function onExportPresetChange() {
+  const preset = document.getElementById('exportPreset').value;
+  document.getElementById('customSizeArea').style.display = preset === 'custom' ? '' : 'none';
+  updateExportSizePreview();
+}
+
+function updateExportSizePreview() {
+  if (!img) { document.getElementById('exportSizePreview').textContent = '出力: —'; return; }
+  const { w, h } = getExportSize();
+  document.getElementById('exportSizePreview').textContent = `出力: ${w} × ${h} px`;
+}
+
+function setExportFromImage() {
+  if (!img) return;
+  document.getElementById('exportW').value = img.width;
+  document.getElementById('exportH').value = img.height;
+  aspectRatio = img.width / img.height;
+  updateExportSizePreview();
+}
+
+function toggleAspect() {
+  aspectLocked = !aspectLocked;
+  if (aspectLocked && img) aspectRatio = img.width / img.height;
+  const btn = document.getElementById('btnAspect');
+  btn.textContent = `比率固定: ${aspectLocked ? 'ON' : 'OFF'}`;
+  btn.classList.toggle('active', aspectLocked);
+}
+
+document.getElementById('exportW').addEventListener('input', () => {
+  if (aspectLocked && img) {
+    const w = parseInt(document.getElementById('exportW').value) || 0;
+    document.getElementById('exportH').value = Math.max(1, Math.round(w / aspectRatio));
+  }
+  updateExportSizePreview();
+});
+document.getElementById('exportH').addEventListener('input', () => {
+  if (aspectLocked && img) {
+    const h = parseInt(document.getElementById('exportH').value) || 0;
+    document.getElementById('exportW').value = Math.max(1, Math.round(h * aspectRatio));
+  }
+  updateExportSizePreview();
+});
 
 // ===== LAYER MANAGEMENT =====
 function selectLayer(l) {
@@ -733,7 +963,7 @@ function deleteSelected() {
 function duplicateSelected() {
   if (!selectedLayer) return;
   const src = selectedLayer;
-  const l = new Layer(src.x + 10, src.y + 10, src.w, src.h);
+  const l = new Layer(src.x+10, src.y+10, src.w, src.h);
   l.spring.mass = src.spring.mass;
   l.spring.spring = src.spring.spring;
   l.spring.damping = src.spring.damping;
@@ -748,11 +978,7 @@ function applyGlobalToAll() {
   const mass = parseFloat(document.getElementById('gMass').value);
   const spring = parseFloat(document.getElementById('gSpring').value);
   const damp = parseFloat(document.getElementById('gDamp').value);
-  for (const l of layers) {
-    l.spring.mass = mass;
-    l.spring.spring = spring;
-    l.spring.damping = damp;
-  }
+  for (const l of layers) { l.spring.mass=mass; l.spring.spring=spring; l.spring.damping=damp; }
   if (selectedLayer) updateSelectedCard();
   setStatus('全レイヤーに適用しました');
 }
@@ -777,26 +1003,14 @@ function updateLayerList() {
         <div class="layer-color" style="background:${l.color}"></div>
         <div class="layer-name">${l.name}</div>
         <div class="layer-actions">
-          <button class="toggle-btn ${l.enabled ? 'on' : ''}" title="${l.enabled ? '非表示' : '表示'}" onclick="toggleLayer(${l.id},event)">
-            ${l.enabled ? '👁' : '🚫'}
-          </button>
+          <button class="toggle-btn ${l.enabled?'on':''}" onclick="toggleLayer(${l.id},event)">${l.enabled?'👁':'🚫'}</button>
         </div>
       </div>
       <div class="layer-params">
-        <div class="layer-param-mini">
-          <div class="lp-label">質量</div>
-          <div class="lp-val">${l.spring.mass.toFixed(1)}</div>
-        </div>
-        <div class="layer-param-mini">
-          <div class="lp-label">弾力</div>
-          <div class="lp-val">${l.spring.spring}</div>
-        </div>
-        <div class="layer-param-mini">
-          <div class="lp-label">倍率</div>
-          <div class="lp-val">×${l.mult.toFixed(1)}</div>
-        </div>
-      </div>
-    `;
+        <div class="layer-param-mini"><div class="lp-label">質量</div><div class="lp-val">${l.spring.mass.toFixed(1)}</div></div>
+        <div class="layer-param-mini"><div class="lp-label">弾力</div><div class="lp-val">${l.spring.spring}</div></div>
+        <div class="layer-param-mini"><div class="lp-label">倍率</div><div class="lp-val">×${l.mult.toFixed(1)}</div></div>
+      </div>`;
     item.addEventListener('click', () => selectLayer(l));
     el.appendChild(item);
   }
@@ -805,11 +1019,7 @@ function updateLayerList() {
 function toggleLayer(id, e) {
   e.stopPropagation();
   const l = layers.find(l => l.id === id);
-  if (l) {
-    l.enabled = !l.enabled;
-    if (!l.enabled) l.spring.reset();
-    updateLayerList();
-  }
+  if (l) { l.enabled = !l.enabled; if (!l.enabled) l.spring.reset(); updateLayerList(); }
 }
 
 function updateSelectedCard() {
@@ -843,10 +1053,10 @@ bindSlider('gMass', 'gMassVal', 1);
 bindSlider('gSpring', 'gSpringVal');
 bindSlider('gDamp', 'gDampVal');
 bindSlider('recDur', 'recDurVal');
-bindSlider('sMass', 'sMassVal', 1, v => { if (selectedLayer) { selectedLayer.spring.mass = v; updateLayerList(); } });
-bindSlider('sSpring', 'sSpringVal', 0, v => { if (selectedLayer) { selectedLayer.spring.spring = v; updateLayerList(); } });
-bindSlider('sDamp', 'sDampVal', 0, v => { if (selectedLayer) { selectedLayer.spring.damping = v; updateLayerList(); } });
-bindSlider('sMult', 'sMultVal', 1, v => { if (selectedLayer) { selectedLayer.mult = v; updateLayerList(); } });
+bindSlider('sMass', 'sMassVal', 1, v => { if (selectedLayer) { selectedLayer.spring.mass=v; updateLayerList(); } });
+bindSlider('sSpring', 'sSpringVal', 0, v => { if (selectedLayer) { selectedLayer.spring.spring=v; updateLayerList(); } });
+bindSlider('sDamp', 'sDampVal', 0, v => { if (selectedLayer) { selectedLayer.spring.damping=v; updateLayerList(); } });
+bindSlider('sMult', 'sMultVal', 1, v => { if (selectedLayer) { selectedLayer.mult=v; updateLayerList(); } });
 
 document.getElementById('modeSelect').onchange = () => {
   mode = document.getElementById('modeSelect').value;
@@ -861,18 +1071,15 @@ function recordGif() {
   const fps = parseInt(document.getElementById('gifFps').value);
   const quality = parseInt(document.getElementById('gifQuality').value);
   const delay = Math.round(1000 / fps);
+  const { w, h } = getExportSize();
 
-  // Check gif.js is loaded
   if (typeof GIF === 'undefined') {
     alert('GIFライブラリの読み込みに失敗しました。インターネット接続を確認してください。\nWebM録画はオフラインでも使えます。');
     return;
   }
 
   const gif = new GIF({
-    workers: 2,
-    quality,
-    width: canvas.width,
-    height: canvas.height,
+    workers: 2, quality, width: w, height: h,
     workerScript: URL.createObjectURL(new Blob([atob('Ly8gZ2lmLndvcmtlci5qcyAwLjIuMCAtIGh0dHBzOi8vZ2l0aHViLmNvbS9qbm9yZGJlcmcvZ2lmLmpzCihmdW5jdGlvbiBlKHQsbixyKXtmdW5jdGlvbiBzKG8sdSl7aWYoIW5bb10pe2lmKCF0W29dKXt2YXIgYT10eXBlb2YgcmVxdWlyZT09ImZ1bmN0aW9uIiYmcmVxdWlyZTtpZighdSYmYSlyZXR1cm4gYShvLCEwKTtpZihpKXJldHVybiBpKG8sITApO3ZhciBmPW5ldyBFcnJvcigiQ2Fubm90IGZpbmQgbW9kdWxlICciK28rIiciKTt0aHJvdyBmLmNvZGU9Ik1PRFVMRV9OT1RfRk9VTkQiLGZ9dmFyIGw9bltvXT17ZXhwb3J0czp7fX07dFtvXVswXS5jYWxsKGwuZXhwb3J0cyxmdW5jdGlvbihlKXt2YXIgbj10W29dWzFdW2VdO3JldHVybiBzKG4/bjplKX0sbCxsLmV4cG9ydHMsZSx0LG4scil9cmV0dXJuIG5bb10uZXhwb3J0c312YXIgaT10eXBlb2YgcmVxdWlyZT09ImZ1bmN0aW9uIiYmcmVxdWlyZTtmb3IodmFyIG89MDtvPHIubGVuZ3RoO28rKylzKHJbb10pO3JldHVybiBzfSkoezE6W2Z1bmN0aW9uKHJlcXVpcmUsbW9kdWxlLGV4cG9ydHMpe3ZhciBOZXVRdWFudD1yZXF1aXJlKCIuL1R5cGVkTmV1UXVhbnQuanMiKTt2YXIgTFpXRW5jb2Rlcj1yZXF1aXJlKCIuL0xaV0VuY29kZXIuanMiKTtmdW5jdGlvbiBCeXRlQXJyYXkoKXt0aGlzLnBhZ2U9LTE7dGhpcy5wYWdlcz1bXTt0aGlzLm5ld1BhZ2UoKX1CeXRlQXJyYXkucGFnZVNpemU9NDA5NjtCeXRlQXJyYXkuY2hhck1hcD17fTtmb3IodmFyIGk9MDtpPDI1NjtpKyspQnl0ZUFycmF5LmNoYXJNYXBbaV09U3RyaW5nLmZyb21DaGFyQ29kZShpKTtCeXRlQXJyYXkucHJvdG90eXBlLm5ld1BhZ2U9ZnVuY3Rpb24oKXt0aGlzLnBhZ2VzWysrdGhpcy5wYWdlXT1uZXcgVWludDhBcnJheShCeXRlQXJyYXkucGFnZVNpemUpO3RoaXMuY3Vyc29yPTB9O0J5dGVBcnJheS5wcm90b3R5cGUuZ2V0RGF0YT1mdW5jdGlvbigpe3ZhciBydj0iIjtmb3IodmFyIHA9MDtwPHRoaXMucGFnZXMubGVuZ3RoO3ArKyl7Zm9yKHZhciBpPTA7aTxCeXRlQXJyYXkucGFnZVNpemU7aSsrKXtydis9Qnl0ZUFycmF5LmNoYXJNYXBbdGhpcy5wYWdlc1twXVtpXV19fXJldHVybiBydn07Qnl0ZUFycmF5LnByb3RvdHlwZS53cml0ZUJ5dGU9ZnVuY3Rpb24odmFsKXtpZih0aGlzLmN1cnNvcj49Qnl0ZUFycmF5LnBhZ2VTaXplKXRoaXMubmV3UGFnZSgpO3RoaXMucGFnZXNbdGhpcy5wYWdlXVt0aGlzLmN1cnNvcisrXT12YWx9O0J5dGVBcnJheS5wcm90b3R5cGUud3JpdGVVVEZCeXRlcz1mdW5jdGlvbihzdHJpbmcpe2Zvcih2YXIgbD1zdHJpbmcubGVuZ3RoLGk9MDtpPGw7aSsrKXRoaXMud3JpdGVCeXRlKHN0cmluZy5jaGFyQ29kZUF0KGkpKX07Qnl0ZUFycmF5LnByb3RvdHlwZS53cml0ZUJ5dGVzPWZ1bmN0aW9uKGFycmF5LG9mZnNldCxsZW5ndGgpe2Zvcih2YXIgbD1sZW5ndGh8fGFycmF5Lmxlbmd0aCxpPW9mZnNldHx8MDtpPGw7aSsrKXRoaXMud3JpdGVCeXRlKGFycmF5W2ldKX07ZnVuY3Rpb24gR0lGRW5jb2Rlcih3aWR0aCxoZWlnaHQpe3RoaXMud2lkdGg9fn53aWR0aDt0aGlzLmhlaWdodD1+fmhlaWdodDt0aGlzLnRyYW5zcGFyZW50PW51bGw7dGhpcy50cmFuc0luZGV4PTA7dGhpcy5yZXBlYXQ9LTE7dGhpcy5kZWxheT0wO3RoaXMuaW1hZ2U9bnVsbDt0aGlzLnBpeGVscz1udWxsO3RoaXMuaW5kZXhlZFBpeGVscz1udWxsO3RoaXMuY29sb3JEZXB0aD1udWxsO3RoaXMuY29sb3JUYWI9bnVsbDt0aGlzLm5ldVF1YW50PW51bGw7dGhpcy51c2VkRW50cnk9bmV3IEFycmF5O3RoaXMucGFsU2l6ZT03O3RoaXMuZGlzcG9zZT0tMTt0aGlzLmZpcnN0RnJhbWU9dHJ1ZTt0aGlzLnNhbXBsZT0xMDt0aGlzLmRpdGhlcj1mYWxzZTt0aGlzLmdsb2JhbFBhbGV0dGU9ZmFsc2U7dGhpcy5vdXQ9bmV3IEJ5dGVBcnJheX1HSUZFbmNvZGVyLnByb3RvdHlwZS5zZXREZWxheT1mdW5jdGlvbihtaWxsaXNlY29uZHMpe3RoaXMuZGVsYXk9TWF0aC5yb3VuZChtaWxsaXNlY29uZHMvMTApfTtHSUZFbmNvZGVyLnByb3RvdHlwZS5zZXRGcmFtZVJhdGU9ZnVuY3Rpb24oZnBzKXt0aGlzLmRlbGF5PU1hdGgucm91bmQoMTAwL2Zwcyl9O0dJRkVuY29kZXIucHJvdG90eXBlLnNldERpc3Bvc2U9ZnVuY3Rpb24oZGlzcG9zYWxDb2RlKXtpZihkaXNwb3NhbENvZGU+PTApdGhpcy5kaXNwb3NlPWRpc3Bvc2FsQ29kZX07R0lGRW5jb2Rlci5wcm90b3R5cGUuc2V0UmVwZWF0PWZ1bmN0aW9uKHJlcGVhdCl7dGhpcy5yZXBlYXQ9cmVwZWF0fTtHSUZFbmNvZGVyLnByb3RvdHlwZS5zZXRUcmFuc3BhcmVudD1mdW5jdGlvbihjb2xvcil7dGhpcy50cmFuc3BhcmVudD1jb2xvcn07R0lGRW5jb2Rlci5wcm90b3R5cGUuYWRkRnJhbWU9ZnVuY3Rpb24oaW1hZ2VEYXRhKXt0aGlzLmltYWdlPWltYWdlRGF0YTt0aGlzLmNvbG9yVGFiPXRoaXMuZ2xvYmFsUGFsZXR0ZSYmdGhpcy5nbG9iYWxQYWxldHRlLnNsaWNlP3RoaXMuZ2xvYmFsUGFsZXR0ZTpudWxsO3RoaXMuZ2V0SW1hZ2VQaXhlbHMoKTt0aGlzLmFuYWx5emVQaXhlbHMoKTtpZih0aGlzLmdsb2JhbFBhbGV0dGU9PT10cnVlKXRoaXMuZ2xvYmFsUGFsZXR0ZT10aGlzLmNvbG9yVGFiO2lmKHRoaXMuZmlyc3RGcmFtZSl7dGhpcy53cml0ZUxTRCgpO3RoaXMud3JpdGVQYWxldHRlKCk7aWYodGhpcy5yZXBlYXQ+PTApe3RoaXMud3JpdGVOZXRzY2FwZUV4dCgpfX10aGlzLndyaXRlR3JhcGhpY0N0cmxFeHQoKTt0aGlzLndyaXRlSW1hZ2VEZXNjKCk7aWYoIXRoaXMuZmlyc3RGcmFtZSYmIXRoaXMuZ2xvYmFsUGFsZXR0ZSl0aGlzLndyaXRlUGFsZXR0ZSgpO3RoaXMud3JpdGVQaXhlbHMoKTt0aGlzLmZpcnN0RnJhbWU9ZmFsc2V9O0dJRkVuY29kZXIucHJvdG90eXBlLmZpbmlzaD1mdW5jdGlvbigpe3RoaXMub3V0LndyaXRlQnl0ZSg1OSl9O0dJRkVuY29kZXIucHJvdG90eXBlLnNldFF1YWxpdHk9ZnVuY3Rpb24ocXVhbGl0eSl7aWYocXVhbGl0eTwxKXF1YWxpdHk9MTt0aGlzLnNhbXBsZT1xdWFsaXR5fTtHSUZFbmNvZGVyLnByb3RvdHlwZS5zZXREaXRoZXI9ZnVuY3Rpb24oZGl0aGVyKXtpZihkaXRoZXI9PT10cnVlKWRpdGhlcj0iRmxveWRTdGVpbmJlcmciO3RoaXMuZGl0aGVyPWRpdGhlcn07R0lGRW5jb2Rlci5wcm90b3R5cGUuc2V0R2xvYmFsUGFsZXR0ZT1mdW5jdGlvbihwYWxldHRlKXt0aGlzLmdsb2JhbFBhbGV0dGU9cGFsZXR0ZX07R0lGRW5jb2Rlci5wcm90b3R5cGUuZ2V0R2xvYmFsUGFsZXR0ZT1mdW5jdGlvbigpe3JldHVybiB0aGlzLmdsb2JhbFBhbGV0dGUmJnRoaXMuZ2xvYmFsUGFsZXR0ZS5zbGljZSYmdGhpcy5nbG9iYWxQYWxldHRlLnNsaWNlKDApfHx0aGlzLmdsb2JhbFBhbGV0dGV9O0dJRkVuY29kZXIucHJvdG90eXBlLndyaXRlSGVhZGVyPWZ1bmN0aW9uKCl7dGhpcy5vdXQud3JpdGVVVEZCeXRlcygiR0lGODlhIil9O0dJRkVuY29kZXIucHJvdG90eXBlLmFuYWx5emVQaXhlbHM9ZnVuY3Rpb24oKXtpZighdGhpcy5jb2xvclRhYil7dGhpcy5uZXVRdWFudD1uZXcgTmV1UXVhbnQodGhpcy5waXhlbHMsdGhpcy5zYW1wbGUpO3RoaXMubmV1UXVhbnQuYnVpbGRDb2xvcm1hcCgpO3RoaXMuY29sb3JUYWI9dGhpcy5uZXVRdWFudC5nZXRDb2xvcm1hcCgpfWlmKHRoaXMuZGl0aGVyKXt0aGlzLmRpdGhlclBpeGVscyh0aGlzLmRpdGhlci5yZXBsYWNlKCItc2VycGVudGluZSIsIiIpLHRoaXMuZGl0aGVyLm1hdGNoKC8tc2VycGVudGluZS8pIT09bnVsbCl9ZWxzZXt0aGlzLmluZGV4UGl4ZWxzKCl9dGhpcy5waXhlbHM9bnVsbDt0aGlzLmNvbG9yRGVwdGg9ODt0aGlzLnBhbFNpemU9NztpZih0aGlzLnRyYW5zcGFyZW50IT09bnVsbCl7dGhpcy50cmFuc0luZGV4PXRoaXMuZmluZENsb3Nlc3QodGhpcy50cmFuc3BhcmVudCx0cnVlKX19O0dJRkVuY29kZXIucHJvdG90eXBlLmluZGV4UGl4ZWxzPWZ1bmN0aW9uKGltZ3Epe3ZhciBuUGl4PXRoaXMucGl4ZWxzLmxlbmd0aC8zO3RoaXMuaW5kZXhlZFBpeGVscz1uZXcgVWludDhBcnJheShuUGl4KTt2YXIgaz0wO2Zvcih2YXIgaj0wO2o8blBpeDtqKyspe3ZhciBpbmRleD10aGlzLmZpbmRDbG9zZXN0UkdCKHRoaXMucGl4ZWxzW2srK10mMjU1LHRoaXMucGl4ZWxzW2srK10mMjU1LHRoaXMucGl4ZWxzW2srK10mMjU1KTt0aGlzLnVzZWRFbnRyeVtpbmRleF09dHJ1ZTt0aGlzLmluZGV4ZWRQaXhlbHNbal09aW5kZXh9fTtHSUZFbmNvZGVyLnByb3RvdHlwZS5kaXRoZXJQaXhlbHM9ZnVuY3Rpb24oa2VybmVsLHNlcnBlbnRpbmUpe3ZhciBrZXJuZWxzPXtGYWxzZUZsb3lkU3RlaW5iZXJnOltbMy84LDEsMF0sWzMvOCwwLDFdLFsyLzgsMSwxXV0sRmxveWRTdGVpbmJlcmc6W1s3LzE2LDEsMF0sWzMvMTYsLTEsMV0sWzUvMTYsMCwxXSxbMS8xNiwxLDFdXSxTdHVja2k6W1s4LzQyLDEsMF0sWzQvNDIsMiwwXSxbMi80MiwtMiwxXSxbNC80MiwtMSwxXSxbOC80MiwwLDFdLFs0LzQyLDEsMV0sWzIvNDIsMiwxXSxbMS80MiwtMiwyXSxbMi80MiwtMSwyXSxbNC80MiwwLDJdLFsyLzQyLDEsMl0sWzEvNDIsMiwyXV0sQXRraW5zb246W1sxLzgsMSwwXSxbMS84LDIsMF0sWzEvOCwtMSwxXSxbMS84LDAsMV0sWzEvOCwxLDFdLFsxLzgsMCwyXV19O2lmKCFrZXJuZWx8fCFrZXJuZWxzW2tlcm5lbF0pe3Rocm93IlVua25vd24gZGl0aGVyaW5nIGtlcm5lbDogIitrZXJuZWx9dmFyIGRzPWtlcm5lbHNba2VybmVsXTt2YXIgaW5kZXg9MCxoZWlnaHQ9dGhpcy5oZWlnaHQsd2lkdGg9dGhpcy53aWR0aCxkYXRhPXRoaXMucGl4ZWxzO3ZhciBkaXJlY3Rpb249c2VycGVudGluZT8tMToxO3RoaXMuaW5kZXhlZFBpeGVscz1uZXcgVWludDhBcnJheSh0aGlzLnBpeGVscy5sZW5ndGgvMyk7Zm9yKHZhciB5PTA7eTxoZWlnaHQ7eSsrKXtpZihzZXJwZW50aW5lKWRpcmVjdGlvbj1kaXJlY3Rpb24qLTE7Zm9yKHZhciB4PWRpcmVjdGlvbj09MT8wOndpZHRoLTEseGVuZD1kaXJlY3Rpb249PTE/d2lkdGg6MDt4IT09eGVuZDt4Kz1kaXJlY3Rpb24pe2luZGV4PXkqd2lkdGgreDt2YXIgaWR4PWluZGV4KjM7dmFyIHIxPWRhdGFbaWR4XTt2YXIgZzE9ZGF0YVtpZHgrMV07dmFyIGIxPWRhdGFbaWR4KzJdO2lkeD10aGlzLmZpbmRDbG9zZXN0UkdCKHIxLGcxLGIxKTt0aGlzLnVzZWRFbnRyeVtpZHhdPXRydWU7dGhpcy5pbmRleGVkUGl4ZWxzW2luZGV4XT1pZHg7aWR4Kj0zO3ZhciByMj10aGlzLmNvbG9yVGFiW2lkeF07dmFyIGcyPXRoaXMuY29sb3JUYWJbaWR4KzFdO3ZhciBiMj10aGlzLmNvbG9yVGFiW2lkeCsyXTt2YXIgZXI9cjEtcjI7dmFyIGVnPWcxLWcyO3ZhciBlYj1iMS1iMjtmb3IodmFyIGk9ZGlyZWN0aW9uPT0xPzA6ZHMubGVuZ3RoLTEsZW5kPWRpcmVjdGlvbj09MT9kcy5sZW5ndGg6MDtpIT09ZW5kO2krPWRpcmVjdGlvbil7dmFyIHgxPWRzW2ldWzFdO3ZhciB5MT1kc1tpXVsyXTtpZih4MSt4Pj0wJiZ4MSt4PHdpZHRoJiZ5MSt5Pj0wJiZ5MSt5PGhlaWdodCl7dmFyIGQ9ZHNbaV1bMF07aWR4PWluZGV4K3gxK3kxKndpZHRoO2lkeCo9MztkYXRhW2lkeF09TWF0aC5tYXgoMCxNYXRoLm1pbigyNTUsZGF0YVtpZHhdK2VyKmQpKTtkYXRhW2lkeCsxXT1NYXRoLm1heCgwLE1hdGgubWluKDI1NSxkYXRhW2lkeCsxXStlZypkKSk7ZGF0YVtpZHgrMl09TWF0aC5tYXgoMCxNYXRoLm1pbigyNTUsZGF0YVtpZHgrMl0rZWIqZCkpfX19fX07R0lGRW5jb2Rlci5wcm90b3R5cGUuZmluZENsb3Nlc3Q9ZnVuY3Rpb24oYyx1c2VkKXtyZXR1cm4gdGhpcy5maW5kQ2xvc2VzdFJHQigoYyYxNjcxMTY4MCk+PjE2LChjJjY1MjgwKT4+OCxjJjI1NSx1c2VkKX07R0lGRW5jb2Rlci5wcm90b3R5cGUuZmluZENsb3Nlc3RSR0I9ZnVuY3Rpb24ocixnLGIsdXNlZCl7aWYodGhpcy5jb2xvclRhYj09PW51bGwpcmV0dXJuLTE7aWYodGhpcy5uZXVRdWFudCYmIXVzZWQpe3JldHVybiB0aGlzLm5ldVF1YW50Lmxvb2t1cFJHQihyLGcsYil9dmFyIGM9YnxnPDw4fHI8PDE2O3ZhciBtaW5wb3M9MDt2YXIgZG1pbj0yNTYqMjU2KjI1Njt2YXIgbGVuPXRoaXMuY29sb3JUYWIubGVuZ3RoO2Zvcih2YXIgaT0wLGluZGV4PTA7aTxsZW47aW5kZXgrKyl7dmFyIGRyPXItKHRoaXMuY29sb3JUYWJbaSsrXSYyNTUpO3ZhciBkZz1nLSh0aGlzLmNvbG9yVGFiW2krK10mMjU1KTt2YXIgZGI9Yi0odGhpcy5jb2xvclRhYltpKytdJjI1NSk7dmFyIGQ9ZHIqZHIrZGcqZGcrZGIqZGI7aWYoKCF1c2VkfHx0aGlzLnVzZWRFbnRyeVtpbmRleF0pJiZkPGRtaW4pe2RtaW49ZDttaW5wb3M9aW5kZXh9fXJldHVybiBtaW5wb3N9O0dJRkVuY29kZXIucHJvdG90eXBlLmdldEltYWdlUGl4ZWxzPWZ1bmN0aW9uKCl7dmFyIHc9dGhpcy53aWR0aDt2YXIgaD10aGlzLmhlaWdodDt0aGlzLnBpeGVscz1uZXcgVWludDhBcnJheSh3KmgqMyk7dmFyIGRhdGE9dGhpcy5pbWFnZTt2YXIgc3JjUG9zPTA7dmFyIGNvdW50PTA7Zm9yKHZhciBpPTA7aTxoO2krKyl7Zm9yKHZhciBqPTA7ajx3O2orKyl7dGhpcy5waXhlbHNbY291bnQrK109ZGF0YVtzcmNQb3MrK107dGhpcy5waXhlbHNbY291bnQrK109ZGF0YVtzcmNQb3MrK107dGhpcy5waXhlbHNbY291bnQrK109ZGF0YVtzcmNQb3MrK107c3JjUG9zKyt9fX07R0lGRW5jb2Rlci5wcm90b3R5cGUud3JpdGVHcmFwaGljQ3RybEV4dD1mdW5jdGlvbigpe3RoaXMub3V0LndyaXRlQnl0ZSgzMyk7dGhpcy5vdXQud3JpdGVCeXRlKDI0OSk7dGhpcy5vdXQud3JpdGVCeXRlKDQpO3ZhciB0cmFuc3AsZGlzcDtpZih0aGlzLnRyYW5zcGFyZW50PT09bnVsbCl7dHJhbnNwPTA7ZGlzcD0wfWVsc2V7dHJhbnNwPTE7ZGlzcD0yfWlmKHRoaXMuZGlzcG9zZT49MCl7ZGlzcD1kaXNwb3NlJjd9ZGlzcDw8PTI7dGhpcy5vdXQud3JpdGVCeXRlKDB8ZGlzcHwwfHRyYW5zcCk7dGhpcy53cml0ZVNob3J0KHRoaXMuZGVsYXkpO3RoaXMub3V0LndyaXRlQnl0ZSh0aGlzLnRyYW5zSW5kZXgpO3RoaXMub3V0LndyaXRlQnl0ZSgwKX07R0lGRW5jb2Rlci5wcm90b3R5cGUud3JpdGVJbWFnZURlc2M9ZnVuY3Rpb24oKXt0aGlzLm91dC53cml0ZUJ5dGUoNDQpO3RoaXMud3JpdGVTaG9ydCgwKTt0aGlzLndyaXRlU2hvcnQoMCk7dGhpcy53cml0ZVNob3J0KHRoaXMud2lkdGgpO3RoaXMud3JpdGVTaG9ydCh0aGlzLmhlaWdodCk7aWYodGhpcy5maXJzdEZyYW1lfHx0aGlzLmdsb2JhbFBhbGV0dGUpe3RoaXMub3V0LndyaXRlQnl0ZSgwKX1lbHNle3RoaXMub3V0LndyaXRlQnl0ZSgxMjh8MHwwfDB8dGhpcy5wYWxTaXplKX19O0dJRkVuY29kZXIucHJvdG90eXBlLndyaXRlTFNEPWZ1bmN0aW9uKCl7dGhpcy53cml0ZVNob3J0KHRoaXMud2lkdGgpO3RoaXMud3JpdGVTaG9ydCh0aGlzLmhlaWdodCk7dGhpcy5vdXQud3JpdGVCeXRlKDEyOHwxMTJ8MHx0aGlzLnBhbFNpemUpO3RoaXMub3V0LndyaXRlQnl0ZSgwKTt0aGlzLm91dC53cml0ZUJ5dGUoMCl9O0dJRkVuY29kZXIucHJvdG90eXBlLndyaXRlTmV0c2NhcGVFeHQ9ZnVuY3Rpb24oKXt0aGlzLm91dC53cml0ZUJ5dGUoMzMpO3RoaXMub3V0LndyaXRlQnl0ZSgyNTUpO3RoaXMub3V0LndyaXRlQnl0ZSgxMSk7dGhpcy5vdXQud3JpdGVVVEZCeXRlcygiTkVUU0NBUEUyLjAiKTt0aGlzLm91dC53cml0ZUJ5dGUoMyk7dGhpcy5vdXQud3JpdGVCeXRlKDEpO3RoaXMud3JpdGVTaG9ydCh0aGlzLnJlcGVhdCk7dGhpcy5vdXQud3JpdGVCeXRlKDApfTtHSUZFbmNvZGVyLnByb3RvdHlwZS53cml0ZVBhbGV0dGU9ZnVuY3Rpb24oKXt0aGlzLm91dC53cml0ZUJ5dGVzKHRoaXMuY29sb3JUYWIpO3ZhciBuPTMqMjU2LXRoaXMuY29sb3JUYWIubGVuZ3RoO2Zvcih2YXIgaT0wO2k8bjtpKyspdGhpcy5vdXQud3JpdGVCeXRlKDApfTtHSUZFbmNvZGVyLnByb3RvdHlwZS53cml0ZVNob3J0PWZ1bmN0aW9uKHBWYWx1ZSl7dGhpcy5vdXQud3JpdGVCeXRlKHBWYWx1ZSYyNTUpO3RoaXMub3V0LndyaXRlQnl0ZShwVmFsdWU+PjgmMjU1KX07R0lGRW5jb2Rlci5wcm90b3R5cGUud3JpdGVQaXhlbHM9ZnVuY3Rpb24oKXt2YXIgZW5jPW5ldyBMWldFbmNvZGVyKHRoaXMud2lkdGgsdGhpcy5oZWlnaHQsdGhpcy5pbmRleGVkUGl4ZWxzLHRoaXMuY29sb3JEZXB0aCk7ZW5jLmVuY29kZSh0aGlzLm91dCl9O0dJRkVuY29kZXIucHJvdG90eXBlLnN0cmVhbT1mdW5jdGlvbigpe3JldHVybiB0aGlzLm91dH07bW9kdWxlLmV4cG9ydHM9R0lGRW5jb2Rlcn0seyIuL0xaV0VuY29kZXIuanMiOjIsIi4vVHlwZWROZXVRdWFudC5qcyI6M31dLDI6W2Z1bmN0aW9uKHJlcXVpcmUsbW9kdWxlLGV4cG9ydHMpe3ZhciBFT0Y9LTE7dmFyIEJJVFM9MTI7dmFyIEhTSVpFPTUwMDM7dmFyIG1hc2tzPVswLDEsMyw3LDE1LDMxLDYzLDEyNywyNTUsNTExLDEwMjMsMjA0Nyw0MDk1LDgxOTEsMTYzODMsMzI3NjcsNjU1MzVdO2Z1bmN0aW9uIExaV0VuY29kZXIod2lkdGgsaGVpZ2h0LHBpeGVscyxjb2xvckRlcHRoKXt2YXIgaW5pdENvZGVTaXplPU1hdGgubWF4KDIsY29sb3JEZXB0aCk7dmFyIGFjY3VtPW5ldyBVaW50OEFycmF5KDI1Nik7dmFyIGh0YWI9bmV3IEludDMyQXJyYXkoSFNJWkUpO3ZhciBjb2RldGFiPW5ldyBJbnQzMkFycmF5KEhTSVpFKTt2YXIgY3VyX2FjY3VtLGN1cl9iaXRzPTA7dmFyIGFfY291bnQ7dmFyIGZyZWVfZW50PTA7dmFyIG1heGNvZGU7dmFyIGNsZWFyX2ZsZz1mYWxzZTt2YXIgZ19pbml0X2JpdHMsQ2xlYXJDb2RlLEVPRkNvZGU7ZnVuY3Rpb24gY2hhcl9vdXQoYyxvdXRzKXthY2N1bVthX2NvdW50KytdPWM7aWYoYV9jb3VudD49MjU0KWZsdXNoX2NoYXIob3V0cyl9ZnVuY3Rpb24gY2xfYmxvY2sob3V0cyl7Y2xfaGFzaChIU0laRSk7ZnJlZV9lbnQ9Q2xlYXJDb2RlKzI7Y2xlYXJfZmxnPXRydWU7b3V0cHV0KENsZWFyQ29kZSxvdXRzKX1mdW5jdGlvbiBjbF9oYXNoKGhzaXplKXtmb3IodmFyIGk9MDtpPGhzaXplOysraSlodGFiW2ldPS0xfWZ1bmN0aW9uIGNvbXByZXNzKGluaXRfYml0cyxvdXRzKXt2YXIgZmNvZGUsYyxpLGVudCxkaXNwLGhzaXplX3JlZyxoc2hpZnQ7Z19pbml0X2JpdHM9aW5pdF9iaXRzO2NsZWFyX2ZsZz1mYWxzZTtuX2JpdHM9Z19pbml0X2JpdHM7bWF4Y29kZT1NQVhDT0RFKG5fYml0cyk7Q2xlYXJDb2RlPTE8PGluaXRfYml0cy0xO0VPRkNvZGU9Q2xlYXJDb2RlKzE7ZnJlZV9lbnQ9Q2xlYXJDb2RlKzI7YV9jb3VudD0wO2VudD1uZXh0UGl4ZWwoKTtoc2hpZnQ9MDtmb3IoZmNvZGU9SFNJWkU7ZmNvZGU8NjU1MzY7ZmNvZGUqPTIpKytoc2hpZnQ7aHNoaWZ0PTgtaHNoaWZ0O2hzaXplX3JlZz1IU0laRTtjbF9oYXNoKGhzaXplX3JlZyk7b3V0cHV0KENsZWFyQ29kZSxvdXRzKTtvdXRlcl9sb29wOndoaWxlKChjPW5leHRQaXhlbCgpKSE9RU9GKXtmY29kZT0oYzw8QklUUykrZW50O2k9Yzw8aHNoaWZ0XmVudDtpZihodGFiW2ldPT09ZmNvZGUpe2VudD1jb2RldGFiW2ldO2NvbnRpbnVlfWVsc2UgaWYoaHRhYltpXT49MCl7ZGlzcD1oc2l6ZV9yZWctaTtpZihpPT09MClkaXNwPTE7ZG97aWYoKGktPWRpc3ApPDApaSs9aHNpemVfcmVnO2lmKGh0YWJbaV09PT1mY29kZSl7ZW50PWNvZGV0YWJbaV07Y29udGludWUgb3V0ZXJfbG9vcH19d2hpbGUoaHRhYltpXT49MCl9b3V0cHV0KGVudCxvdXRzKTtlbnQ9YztpZihmcmVlX2VudDwxPDxCSVRTKXtjb2RldGFiW2ldPWZyZWVfZW50Kys7aHRhYltpXT1mY29kZX1lbHNle2NsX2Jsb2NrKG91dHMpfX1vdXRwdXQoZW50LG91dHMpO291dHB1dChFT0ZDb2RlLG91dHMpfWZ1bmN0aW9uIGVuY29kZShvdXRzKXtvdXRzLndyaXRlQnl0ZShpbml0Q29kZVNpemUpO3JlbWFpbmluZz13aWR0aCpoZWlnaHQ7Y3VyUGl4ZWw9MDtjb21wcmVzcyhpbml0Q29kZVNpemUrMSxvdXRzKTtvdXRzLndyaXRlQnl0ZSgwKX1mdW5jdGlvbiBmbHVzaF9jaGFyKG91dHMpe2lmKGFfY291bnQ+MCl7b3V0cy53cml0ZUJ5dGUoYV9jb3VudCk7b3V0cy53cml0ZUJ5dGVzKGFjY3VtLDAsYV9jb3VudCk7YV9jb3VudD0wfX1mdW5jdGlvbiBNQVhDT0RFKG5fYml0cyl7cmV0dXJuKDE8PG5fYml0cyktMX1mdW5jdGlvbiBuZXh0UGl4ZWwoKXtpZihyZW1haW5pbmc9PT0wKXJldHVybiBFT0Y7LS1yZW1haW5pbmc7dmFyIHBpeD1waXhlbHNbY3VyUGl4ZWwrK107cmV0dXJuIHBpeCYyNTV9ZnVuY3Rpb24gb3V0cHV0KGNvZGUsb3V0cyl7Y3VyX2FjY3VtJj1tYXNrc1tjdXJfYml0c107aWYoY3VyX2JpdHM+MCljdXJfYWNjdW18PWNvZGU8PGN1cl9iaXRzO2Vsc2UgY3VyX2FjY3VtPWNvZGU7Y3VyX2JpdHMrPW5fYml0czt3aGlsZShjdXJfYml0cz49OCl7Y2hhcl9vdXQoY3VyX2FjY3VtJjI1NSxvdXRzKTtjdXJfYWNjdW0+Pj04O2N1cl9iaXRzLT04fWlmKGZyZWVfZW50Pm1heGNvZGV8fGNsZWFyX2ZsZyl7aWYoY2xlYXJfZmxnKXttYXhjb2RlPU1BWENPREUobl9iaXRzPWdfaW5pdF9iaXRzKTtjbGVhcl9mbGc9ZmFsc2V9ZWxzZXsrK25fYml0cztpZihuX2JpdHM9PUJJVFMpbWF4Y29kZT0xPDxCSVRTO2Vsc2UgbWF4Y29kZT1NQVhDT0RFKG5fYml0cyl9fWlmKGNvZGU9PUVPRkNvZGUpe3doaWxlKGN1cl9iaXRzPjApe2NoYXJfb3V0KGN1cl9hY2N1bSYyNTUsb3V0cyk7Y3VyX2FjY3VtPj49ODtjdXJfYml0cy09OH1mbHVzaF9jaGFyKG91dHMpfX10aGlzLmVuY29kZT1lbmNvZGV9bW9kdWxlLmV4cG9ydHM9TFpXRW5jb2Rlcn0se31dLDM6W2Z1bmN0aW9uKHJlcXVpcmUsbW9kdWxlLGV4cG9ydHMpe3ZhciBuY3ljbGVzPTEwMDt2YXIgbmV0c2l6ZT0yNTY7dmFyIG1heG5ldHBvcz1uZXRzaXplLTE7dmFyIG5ldGJpYXNzaGlmdD00O3ZhciBpbnRiaWFzc2hpZnQ9MTY7dmFyIGludGJpYXM9MTw8aW50Ymlhc3NoaWZ0O3ZhciBnYW1tYXNoaWZ0PTEwO3ZhciBnYW1tYT0xPDxnYW1tYXNoaWZ0O3ZhciBiZXRhc2hpZnQ9MTA7dmFyIGJldGE9aW50Ymlhcz4+YmV0YXNoaWZ0O3ZhciBiZXRhZ2FtbWE9aW50Ymlhczw8Z2FtbWFzaGlmdC1iZXRhc2hpZnQ7dmFyIGluaXRyYWQ9bmV0c2l6ZT4+Mzt2YXIgcmFkaXVzYmlhc3NoaWZ0PTY7dmFyIHJhZGl1c2JpYXM9MTw8cmFkaXVzYmlhc3NoaWZ0O3ZhciBpbml0cmFkaXVzPWluaXRyYWQqcmFkaXVzYmlhczt2YXIgcmFkaXVzZGVjPTMwO3ZhciBhbHBoYWJpYXNzaGlmdD0xMDt2YXIgaW5pdGFscGhhPTE8PGFscGhhYmlhc3NoaWZ0O3ZhciBhbHBoYWRlYzt2YXIgcmFkYmlhc3NoaWZ0PTg7dmFyIHJhZGJpYXM9MTw8cmFkYmlhc3NoaWZ0O3ZhciBhbHBoYXJhZGJzaGlmdD1hbHBoYWJpYXNzaGlmdCtyYWRiaWFzc2hpZnQ7dmFyIGFscGhhcmFkYmlhcz0xPDxhbHBoYXJhZGJzaGlmdDt2YXIgcHJpbWUxPTQ5OTt2YXIgcHJpbWUyPTQ5MTt2YXIgcHJpbWUzPTQ4Nzt2YXIgcHJpbWU0PTUwMzt2YXIgbWlucGljdHVyZWJ5dGVzPTMqcHJpbWU0O2Z1bmN0aW9uIE5ldVF1YW50KHBpeGVscyxzYW1wbGVmYWMpe3ZhciBuZXR3b3JrO3ZhciBuZXRpbmRleDt2YXIgYmlhczt2YXIgZnJlcTt2YXIgcmFkcG93ZXI7ZnVuY3Rpb24gaW5pdCgpe25ldHdvcms9W107bmV0aW5kZXg9bmV3IEludDMyQXJyYXkoMjU2KTtiaWFzPW5ldyBJbnQzMkFycmF5KG5ldHNpemUpO2ZyZXE9bmV3IEludDMyQXJyYXkobmV0c2l6ZSk7cmFkcG93ZXI9bmV3IEludDMyQXJyYXkobmV0c2l6ZT4+Myk7dmFyIGksdjtmb3IoaT0wO2k8bmV0c2l6ZTtpKyspe3Y9KGk8PG5ldGJpYXNzaGlmdCs4KS9uZXRzaXplO25ldHdvcmtbaV09bmV3IEZsb2F0NjRBcnJheShbdix2LHYsMF0pO2ZyZXFbaV09aW50Ymlhcy9uZXRzaXplO2JpYXNbaV09MH19ZnVuY3Rpb24gdW5iaWFzbmV0KCl7Zm9yKHZhciBpPTA7aTxuZXRzaXplO2krKyl7bmV0d29ya1tpXVswXT4+PW5ldGJpYXNzaGlmdDtuZXR3b3JrW2ldWzFdPj49bmV0Ymlhc3NoaWZ0O25ldHdvcmtbaV1bMl0+Pj1uZXRiaWFzc2hpZnQ7bmV0d29ya1tpXVszXT1pfX1mdW5jdGlvbiBhbHRlcnNpbmdsZShhbHBoYSxpLGIsZyxyKXtuZXR3b3JrW2ldWzBdLT1hbHBoYSoobmV0d29ya1tpXVswXS1iKS9pbml0YWxwaGE7bmV0d29ya1tpXVsxXS09YWxwaGEqKG5ldHdvcmtbaV1bMV0tZykvaW5pdGFscGhhO25ldHdvcmtbaV1bMl0tPWFscGhhKihuZXR3b3JrW2ldWzJdLXIpL2luaXRhbHBoYX1mdW5jdGlvbiBhbHRlcm5laWdoKHJhZGl1cyxpLGIsZyxyKXt2YXIgbG89TWF0aC5hYnMoaS1yYWRpdXMpO3ZhciBoaT1NYXRoLm1pbihpK3JhZGl1cyxuZXRzaXplKTt2YXIgaj1pKzE7dmFyIGs9aS0xO3ZhciBtPTE7dmFyIHAsYTt3aGlsZShqPGhpfHxrPmxvKXthPXJhZHBvd2VyW20rK107aWYoajxoaSl7cD1uZXR3b3JrW2orK107cFswXS09YSoocFswXS1iKS9hbHBoYXJhZGJpYXM7cFsxXS09YSoocFsxXS1nKS9hbHBoYXJhZGJpYXM7cFsyXS09YSoocFsyXS1yKS9hbHBoYXJhZGJpYXN9aWYoaz5sbyl7cD1uZXR3b3JrW2stLV07cFswXS09YSoocFswXS1iKS9hbHBoYXJhZGJpYXM7cFsxXS09YSoocFsxXS1nKS9hbHBoYXJhZGJpYXM7cFsyXS09YSoocFsyXS1yKS9hbHBoYXJhZGJpYXN9fX1mdW5jdGlvbiBjb250ZXN0KGIsZyxyKXt2YXIgYmVzdGQ9figxPDwzMSk7dmFyIGJlc3RiaWFzZD1iZXN0ZDt2YXIgYmVzdHBvcz0tMTt2YXIgYmVzdGJpYXNwb3M9YmVzdHBvczt2YXIgaSxuLGRpc3QsYmlhc2Rpc3QsYmV0YWZyZXE7Zm9yKGk9MDtpPG5ldHNpemU7aSsrKXtuPW5ldHdvcmtbaV07ZGlzdD1NYXRoLmFicyhuWzBdLWIpK01hdGguYWJzKG5bMV0tZykrTWF0aC5hYnMoblsyXS1yKTtpZihkaXN0PGJlc3RkKXtiZXN0ZD1kaXN0O2Jlc3Rwb3M9aX1iaWFzZGlzdD1kaXN0LShiaWFzW2ldPj5pbnRiaWFzc2hpZnQtbmV0Ymlhc3NoaWZ0KTtpZihiaWFzZGlzdDxiZXN0Ymlhc2Qpe2Jlc3RiaWFzZD1iaWFzZGlzdDtiZXN0Ymlhc3Bvcz1pfWJldGFmcmVxPWZyZXFbaV0+PmJldGFzaGlmdDtmcmVxW2ldLT1iZXRhZnJlcTtiaWFzW2ldKz1iZXRhZnJlcTw8Z2FtbWFzaGlmdH1mcmVxW2Jlc3Rwb3NdKz1iZXRhO2JpYXNbYmVzdHBvc10tPWJldGFnYW1tYTtyZXR1cm4gYmVzdGJpYXNwb3N9ZnVuY3Rpb24gaW54YnVpbGQoKXt2YXIgaSxqLHAscSxzbWFsbHBvcyxzbWFsbHZhbCxwcmV2aW91c2NvbD0wLHN0YXJ0cG9zPTA7Zm9yKGk9MDtpPG5ldHNpemU7aSsrKXtwPW5ldHdvcmtbaV07c21hbGxwb3M9aTtzbWFsbHZhbD1wWzFdO2ZvcihqPWkrMTtqPG5ldHNpemU7aisrKXtxPW5ldHdvcmtbal07aWYocVsxXTxzbWFsbHZhbCl7c21hbGxwb3M9ajtzbWFsbHZhbD1xWzFdfX1xPW5ldHdvcmtbc21hbGxwb3NdO2lmKGkhPXNtYWxscG9zKXtqPXFbMF07cVswXT1wWzBdO3BbMF09ajtqPXFbMV07cVsxXT1wWzFdO3BbMV09ajtqPXFbMl07cVsyXT1wWzJdO3BbMl09ajtqPXFbM107cVszXT1wWzNdO3BbM109an1pZihzbWFsbHZhbCE9cHJldmlvdXNjb2wpe25ldGluZGV4W3ByZXZpb3VzY29sXT1zdGFydHBvcytpPj4xO2ZvcihqPXByZXZpb3VzY29sKzE7ajxzbWFsbHZhbDtqKyspbmV0aW5kZXhbal09aTtwcmV2aW91c2NvbD1zbWFsbHZhbDtzdGFydHBvcz1pfX1uZXRpbmRleFtwcmV2aW91c2NvbF09c3RhcnRwb3MrbWF4bmV0cG9zPj4xO2ZvcihqPXByZXZpb3VzY29sKzE7ajwyNTY7aisrKW5ldGluZGV4W2pdPW1heG5ldHBvc31mdW5jdGlvbiBpbnhzZWFyY2goYixnLHIpe3ZhciBhLHAsZGlzdDt2YXIgYmVzdGQ9MWUzO3ZhciBiZXN0PS0xO3ZhciBpPW5ldGluZGV4W2ddO3ZhciBqPWktMTt3aGlsZShpPG5ldHNpemV8fGo+PTApe2lmKGk8bmV0c2l6ZSl7cD1uZXR3b3JrW2ldO2Rpc3Q9cFsxXS1nO2lmKGRpc3Q+PWJlc3RkKWk9bmV0c2l6ZTtlbHNle2krKztpZihkaXN0PDApZGlzdD0tZGlzdDthPXBbMF0tYjtpZihhPDApYT0tYTtkaXN0Kz1hO2lmKGRpc3Q8YmVzdGQpe2E9cFsyXS1yO2lmKGE8MClhPS1hO2Rpc3QrPWE7aWYoZGlzdDxiZXN0ZCl7YmVzdGQ9ZGlzdDtiZXN0PXBbM119fX19aWYoaj49MCl7cD1uZXR3b3JrW2pdO2Rpc3Q9Zy1wWzFdO2lmKGRpc3Q+PWJlc3RkKWo9LTE7ZWxzZXtqLS07aWYoZGlzdDwwKWRpc3Q9LWRpc3Q7YT1wWzBdLWI7aWYoYTwwKWE9LWE7ZGlzdCs9YTtpZihkaXN0PGJlc3RkKXthPXBbMl0tcjtpZihhPDApYT0tYTtkaXN0Kz1hO2lmKGRpc3Q8YmVzdGQpe2Jlc3RkPWRpc3Q7YmVzdD1wWzNdfX19fX1yZXR1cm4gYmVzdH1mdW5jdGlvbiBsZWFybigpe3ZhciBpO3ZhciBsZW5ndGhjb3VudD1waXhlbHMubGVuZ3RoO3ZhciBhbHBoYWRlYz0zMCsoc2FtcGxlZmFjLTEpLzM7dmFyIHNhbXBsZXBpeGVscz1sZW5ndGhjb3VudC8oMypzYW1wbGVmYWMpO3ZhciBkZWx0YT1+fihzYW1wbGVwaXhlbHMvbmN5Y2xlcyk7dmFyIGFscGhhPWluaXRhbHBoYTt2YXIgcmFkaXVzPWluaXRyYWRpdXM7dmFyIHJhZD1yYWRpdXM+PnJhZGl1c2JpYXNzaGlmdDtpZihyYWQ8PTEpcmFkPTA7Zm9yKGk9MDtpPHJhZDtpKyspcmFkcG93ZXJbaV09YWxwaGEqKChyYWQqcmFkLWkqaSkqcmFkYmlhcy8ocmFkKnJhZCkpO3ZhciBzdGVwO2lmKGxlbmd0aGNvdW50PG1pbnBpY3R1cmVieXRlcyl7c2FtcGxlZmFjPTE7c3RlcD0zfWVsc2UgaWYobGVuZ3RoY291bnQlcHJpbWUxIT09MCl7c3RlcD0zKnByaW1lMX1lbHNlIGlmKGxlbmd0aGNvdW50JXByaW1lMiE9PTApe3N0ZXA9MypwcmltZTJ9ZWxzZSBpZihsZW5ndGhjb3VudCVwcmltZTMhPT0wKXtzdGVwPTMqcHJpbWUzfWVsc2V7c3RlcD0zKnByaW1lNH12YXIgYixnLHIsajt2YXIgcGl4PTA7aT0wO3doaWxlKGk8c2FtcGxlcGl4ZWxzKXtiPShwaXhlbHNbcGl4XSYyNTUpPDxuZXRiaWFzc2hpZnQ7Zz0ocGl4ZWxzW3BpeCsxXSYyNTUpPDxuZXRiaWFzc2hpZnQ7cj0ocGl4ZWxzW3BpeCsyXSYyNTUpPDxuZXRiaWFzc2hpZnQ7aj1jb250ZXN0KGIsZyxyKTthbHRlcnNpbmdsZShhbHBoYSxqLGIsZyxyKTtpZihyYWQhPT0wKWFsdGVybmVpZ2gocmFkLGosYixnLHIpO3BpeCs9c3RlcDtpZihwaXg+PWxlbmd0aGNvdW50KXBpeC09bGVuZ3RoY291bnQ7aSsrO2lmKGRlbHRhPT09MClkZWx0YT0xO2lmKGklZGVsdGE9PT0wKXthbHBoYS09YWxwaGEvYWxwaGFkZWM7cmFkaXVzLT1yYWRpdXMvcmFkaXVzZGVjO3JhZD1yYWRpdXM+PnJhZGl1c2JpYXNzaGlmdDtpZihyYWQ8PTEpcmFkPTA7Zm9yKGo9MDtqPHJhZDtqKyspcmFkcG93ZXJbal09YWxwaGEqKChyYWQqcmFkLWoqaikqcmFkYmlhcy8ocmFkKnJhZCkpfX19ZnVuY3Rpb24gYnVpbGRDb2xvcm1hcCgpe2luaXQoKTtsZWFybigpO3VuYmlhc25ldCgpO2lueGJ1aWxkKCl9dGhpcy5idWlsZENvbG9ybWFwPWJ1aWxkQ29sb3JtYXA7ZnVuY3Rpb24gZ2V0Q29sb3JtYXAoKXt2YXIgbWFwPVtdO3ZhciBpbmRleD1bXTtmb3IodmFyIGk9MDtpPG5ldHNpemU7aSsrKWluZGV4W25ldHdvcmtbaV1bM11dPWk7dmFyIGs9MDtmb3IodmFyIGw9MDtsPG5ldHNpemU7bCsrKXt2YXIgaj1pbmRleFtsXTttYXBbaysrXT1uZXR3b3JrW2pdWzBdO21hcFtrKytdPW5ldHdvcmtbal1bMV07bWFwW2srK109bmV0d29ya1tqXVsyXX1yZXR1cm4gbWFwfXRoaXMuZ2V0Q29sb3JtYXA9Z2V0Q29sb3JtYXA7dGhpcy5sb29rdXBSR0I9aW54c2VhcmNofW1vZHVsZS5leHBvcnRzPU5ldVF1YW50fSx7fV0sNDpbZnVuY3Rpb24ocmVxdWlyZSxtb2R1bGUsZXhwb3J0cyl7dmFyIEdJRkVuY29kZXIscmVuZGVyRnJhbWU7R0lGRW5jb2Rlcj1yZXF1aXJlKCIuL0dJRkVuY29kZXIuanMiKTtyZW5kZXJGcmFtZT1mdW5jdGlvbihmcmFtZSl7dmFyIGVuY29kZXIscGFnZSxzdHJlYW0sdHJhbnNmZXI7ZW5jb2Rlcj1uZXcgR0lGRW5jb2RlcihmcmFtZS53aWR0aCxmcmFtZS5oZWlnaHQpO2lmKGZyYW1lLmluZGV4PT09MCl7ZW5jb2Rlci53cml0ZUhlYWRlcigpfWVsc2V7ZW5jb2Rlci5maXJzdEZyYW1lPWZhbHNlfWVuY29kZXIuc2V0VHJhbnNwYXJlbnQoZnJhbWUudHJhbnNwYXJlbnQpO2VuY29kZXIuc2V0UmVwZWF0KGZyYW1lLnJlcGVhdCk7ZW5jb2Rlci5zZXREZWxheShmcmFtZS5kZWxheSk7ZW5jb2Rlci5zZXRRdWFsaXR5KGZyYW1lLnF1YWxpdHkpO2VuY29kZXIuc2V0RGl0aGVyKGZyYW1lLmRpdGhlcik7ZW5jb2Rlci5zZXRHbG9iYWxQYWxldHRlKGZyYW1lLmdsb2JhbFBhbGV0dGUpO2VuY29kZXIuYWRkRnJhbWUoZnJhbWUuZGF0YSk7aWYoZnJhbWUubGFzdCl7ZW5jb2Rlci5maW5pc2goKX1pZihmcmFtZS5nbG9iYWxQYWxldHRlPT09dHJ1ZSl7ZnJhbWUuZ2xvYmFsUGFsZXR0ZT1lbmNvZGVyLmdldEdsb2JhbFBhbGV0dGUoKX1zdHJlYW09ZW5jb2Rlci5zdHJlYW0oKTtmcmFtZS5kYXRhPXN0cmVhbS5wYWdlcztmcmFtZS5jdXJzb3I9c3RyZWFtLmN1cnNvcjtmcmFtZS5wYWdlU2l6ZT1zdHJlYW0uY29uc3RydWN0b3IucGFnZVNpemU7aWYoZnJhbWUuY2FuVHJhbnNmZXIpe3RyYW5zZmVyPWZ1bmN0aW9uKCl7dmFyIGksbGVuLHJlZixyZXN1bHRzO3JlZj1mcmFtZS5kYXRhO3Jlc3VsdHM9W107Zm9yKGk9MCxsZW49cmVmLmxlbmd0aDtpPGxlbjtpKyspe3BhZ2U9cmVmW2ldO3Jlc3VsdHMucHVzaChwYWdlLmJ1ZmZlcil9cmV0dXJuIHJlc3VsdHN9KCk7cmV0dXJuIHNlbGYucG9zdE1lc3NhZ2UoZnJhbWUsdHJhbnNmZXIpfWVsc2V7cmV0dXJuIHNlbGYucG9zdE1lc3NhZ2UoZnJhbWUpfX07c2VsZi5vbm1lc3NhZ2U9ZnVuY3Rpb24oZXZlbnQpe3JldHVybiByZW5kZXJGcmFtZShldmVudC5kYXRhKX19LHsiLi9HSUZFbmNvZGVyLmpzIjoxfV19LHt9LFs0XSk7Ci8vIyBzb3VyY2VNYXBwaW5nVVJMPWdpZi53b3JrZXIuanMubWFwCg==')], {type:'text/javascript'}))
   });
 
@@ -882,13 +1089,11 @@ function recordGif() {
   document.getElementById('btnRecGif').disabled = true;
   document.getElementById('btnRecWebm').disabled = true;
 
-  // Auto-shake at start
   shakeAll();
 
   let elapsed = 0;
   const captureFrame = () => {
     if (elapsed >= dur) {
-      // Done capturing
       recording = false;
       document.getElementById('recBadge').classList.remove('visible');
       setStatus('⏳ GIFエンコード中...');
@@ -897,25 +1102,20 @@ function recordGif() {
       gif.on('finished', blob => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
-        a.download = `xx-cake-${Date.now()}.gif`;
-        a.click();
+        a.href = url; a.download = `xx-cake-${Date.now()}.gif`; a.click();
         URL.revokeObjectURL(url);
         document.getElementById('exportProgress').style.display = 'none';
         document.getElementById('btnRecGif').disabled = false;
         document.getElementById('btnRecWebm').disabled = false;
-        setStatus(`✅ GIF保存完了 (${(blob.size/1024).toFixed(0)}KB)`);
+        setStatus(`✅ GIF保存完了 (${(blob.size/1024).toFixed(0)}KB) — ${w}×${h}px`);
       });
       gif.render();
       return;
     }
 
-    gif.addFrame(canvas, { copy: true, delay });
+    gif.addFrame(getExportFrame(), { copy: true, delay });
     elapsed += delay;
-
-    // Re-shake occasionally
     if (elapsed > 0 && elapsed % 1500 < delay) shakeAll();
-
     setTimeout(captureFrame, delay);
   };
 
@@ -929,27 +1129,37 @@ function recordWebM() {
   if (!canvas.captureStream) { alert('このブラウザはWebM録画に対応していません'); return; }
 
   const dur = parseInt(document.getElementById('recDur').value) * 1000;
-  const stream = canvas.captureStream(30);
-  const chunks = [];
+  const { w, h } = getExportSize();
 
-  const mime = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
+  // Set up export canvas at target size
+  exportCanvas.width = w;
+  exportCanvas.height = h;
+
+  // Render loop: copy main canvas → export canvas at target resolution
+  exportRenderInterval = setInterval(() => {
+    exportCtx.drawImage(canvas, 0, 0, w, h);
+  }, 1000 / 30);
+
+  const stream = exportCanvas.captureStream(30);
+  const chunks = [];
+  const mime = ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm']
     .find(m => MediaRecorder.isTypeSupported(m)) || 'video/webm';
 
   mediaRecorder = new MediaRecorder(stream, { mimeType: mime });
   mediaRecorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
   mediaRecorder.onstop = () => {
+    clearInterval(exportRenderInterval);
+    stream.getTracks().forEach(t => t.stop());
     const blob = new Blob(chunks, { type: mime });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = `xx-cake-${Date.now()}.webm`;
-    a.click();
+    a.href = url; a.download = `xx-cake-${Date.now()}.webm`; a.click();
     URL.revokeObjectURL(url);
     recording = false;
     document.getElementById('recBadge').classList.remove('visible');
     document.getElementById('btnRecGif').disabled = false;
     document.getElementById('btnRecWebm').disabled = false;
-    setStatus(`✅ WebM保存完了 (${(blob.size/1024).toFixed(0)}KB)`);
+    setStatus(`✅ WebM保存完了 (${(blob.size/1024).toFixed(0)}KB) — ${w}×${h}px`);
   };
 
   recording = true;
@@ -960,20 +1170,16 @@ function recordWebM() {
 
   mediaRecorder.start(100);
   shakeAll();
-
-  // Re-shake midway
   setTimeout(() => { if (recording) shakeAll(); }, dur * 0.4);
-
   setTimeout(() => {
     if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-    stream.getTracks().forEach(t => t.stop());
   }, dur);
 }
 
 // ===== STATUS =====
-function setStatus(msg, recording=false) {
+function setStatus(msg, rec=false) {
   document.getElementById('statusText').textContent = msg;
-  document.getElementById('statusDot').className = 'status-dot' + (recording ? ' recording' : '');
+  document.getElementById('statusDot').className = 'status-dot' + (rec ? ' recording' : '');
 }
 
 // ===== KEYBOARD SHORTCUTS =====
@@ -983,8 +1189,13 @@ document.addEventListener('keydown', e => {
   if (e.code === 'KeyR') resetAll();
   if (e.code === 'Delete' || e.code === 'Backspace') deleteSelected();
   if (e.code === 'KeyM') document.getElementById('modeSelect').value = mode === 'draw' ? 'move' : 'draw';
+  if (e.code === 'KeyF') fitToScreen();
+  if (e.code === 'Digit0' || e.code === 'Numpad0') resetView();
+  if ((e.ctrlKey || e.metaKey) && (e.code === 'Equal' || e.code === 'NumpadAdd')) { e.preventDefault(); zoomStep(1.2); }
+  if ((e.ctrlKey || e.metaKey) && (e.code === 'Minus' || e.code === 'NumpadSubtract')) { e.preventDefault(); zoomStep(1/1.2); }
 });
 
+applyViewTransform();
 setStatus('画像を読み込んでください');
 </script>
 </body>
