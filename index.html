@@ -163,16 +163,16 @@
         </div>
         <div style="color:var(--text2);font-size:10px;margin-bottom:6px">デフォルト物理値（新規セルに適用）</div>
         <div class="field">
-          <label>K 弾力 <span id="globalKVal">120</span></label>
-          <input type="range" id="globalK" min="10" max="800" step="10" value="120">
+          <label>K 弾力 <span id="globalKVal">200</span></label>
+          <input type="range" id="globalK" min="10" max="800" step="10" value="200">
         </div>
         <div class="field">
           <label>M 質量 <span id="globalMVal">5.0</span></label>
           <input type="range" id="globalM" min="0.5" max="30" step="0.5" value="5">
         </div>
         <div class="field">
-          <label>減衰 <span id="globalDampVal">8</span></label>
-          <input type="range" id="globalDamp" min="0.5" max="40" step="0.5" value="8">
+          <label>減衰 <span id="globalDampVal">5</span></label>
+          <input type="range" id="globalDamp" min="0.5" max="40" step="0.5" value="5">
         </div>
         <button class="btn btn-ghost btn-sm" style="width:100%" onclick="applyParamsToAll()">全セルに適用</button>
       </div>
@@ -191,8 +191,8 @@
           <button class="osc-btn" id="oscCircular" onclick="setOscType('circular')">円⊙</button>
         </div>
         <div class="field">
-          <label>強さ <span id="shakeStrVal">20</span></label>
-          <input type="range" id="shakeStr" min="1" max="100" step="1" value="20">
+          <label>強さ <span id="shakeStrVal">90</span></label>
+          <input type="range" id="shakeStr" min="1" max="200" step="1" value="90">
         </div>
         <div class="field" id="freqField">
           <label>速さ <span id="oscFreqVal">1.5</span> Hz</label>
@@ -435,51 +435,50 @@ wrap.addEventListener('drop', e => { e.preventDefault(); wrap.style.outline = ''
 // ===== RENDER =====
 function render() {
   if (!img) return;
-  // Fill background
+
+  // Smooth sub-pixel rendering
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  // Fill background first (shows through gaps when cells displace)
   ctx.fillStyle = bgColor;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // 1. Draw base image (all cells in place)
-  ctx.drawImage(img, 0, 0);
-
-  // 2. For displaced active cells: patch gap with bg, draw at new position
+  // Draw ALL cells individually with floating-point displacement.
+  // Inactive/fixed = original position, active = original + displacement.
+  // This is the correct approach: no Math.round(), no base-image-then-patch.
   for (const c of cells) {
-    if (!c.active || c.fixed) continue;
-    const ox = Math.round(c.dx), oy = Math.round(c.dy);
-    if (ox === 0 && oy === 0) continue;
-    // Cover original position with background
-    ctx.fillStyle = bgColor;
-    ctx.fillRect(c.x, c.y, c.w, c.h);
-    // Draw at displaced position
-    ctx.drawImage(img, c.x, c.y, c.w, c.h, c.x + ox, c.y + oy, c.w, c.h);
+    const destX = c.active && !c.fixed ? c.x + c.dx : c.x;
+    const destY = c.active && !c.fixed ? c.y + c.dy : c.y;
+    ctx.drawImage(img, c.x, c.y, c.w, c.h, destX, destY, c.w, c.h);
   }
 
-  // 3. Grid overlay (only in non-recording mode)
+  // Grid overlay (edit mode only, not during recording)
   if (!recording) {
     renderGridOverlay();
   }
 }
 
 function renderGridOverlay() {
-  // Tint active and fixed cells
+  // Tint active and fixed cells (at their current floating-point position)
   for (const c of cells) {
     if (!c.active) continue;
     ctx.fillStyle = c.fixed
-      ? 'rgba(249,226,175,0.30)'   // yellow for fixed
-      : 'rgba(137,180,250,0.18)';  // blue for active
-    ctx.fillRect(c.x + Math.round(c.dx), c.y + Math.round(c.dy), c.w, c.h);
+      ? 'rgba(249,226,175,0.30)'
+      : 'rgba(137,180,250,0.18)';
+    const destX = c.active && !c.fixed ? c.x + c.dx : c.x;
+    const destY = c.active && !c.fixed ? c.y + c.dy : c.y;
+    ctx.fillRect(destX, destY, c.w, c.h);
   }
   // Grid lines
   ctx.strokeStyle = 'rgba(255,255,255,0.08)';
   ctx.lineWidth = 0.5;
   ctx.beginPath();
   for (let cx = 0; cx <= gridW; cx++) {
-    ctx.moveTo(cx * gridSize, 0);
-    ctx.lineTo(cx * gridSize, canvas.height);
+    ctx.moveTo(cx * gridSize, 0); ctx.lineTo(cx * gridSize, canvas.height);
   }
   for (let cy = 0; cy <= gridH; cy++) {
-    ctx.moveTo(0, cy * gridSize);
-    ctx.lineTo(canvas.width, cy * gridSize);
+    ctx.moveTo(0, cy * gridSize); ctx.lineTo(canvas.width, cy * gridSize);
   }
   ctx.stroke();
 }
